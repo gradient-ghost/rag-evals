@@ -1,0 +1,51 @@
+id,question,type,sessions,recall_score,precision_score,recall_mismatch,precision_mismatch
+Q002,"How do we define LLM evals, and what are the key characteristics?",single_concept,[1],0.4000,0.6000,False,False
+Q005,What are application evals and why do they matter if we already have model evals?,single_concept,[1],0.4000,0.8000,False,False
+Q007,What is a golden dataset and how is one created?,single_concept,[1],0.6000,0.8000,False,False
+Q010,What are the three levels at which an LLM application can fail and be evaluated?,single_concept,[2],0.6667,0.6000,False,False
+Q012,What are the risk categories in LLM evaluation?,single_concept,[2],0.4000,0.6000,False,False
+Q014,What are the different eval methods and who actually executes the evaluation?,single_concept,[2],0.7500,0.8000,False,False
+Q017,When should I use LLM-as-a-judge instead of code or humans?,single_concept,[2],0.8000,0.2000,False,False
+Q018,What are offline evals and what are their main benefits?,single_concept,[3],0.5000,1.0000,False,False
+Q021,What is drift and why does it make my offline eval setup obsolete?,single_concept,[3],1.0000,0.6000,False,False
+Q022,What is online eval and why does it not need a golden dataset?,single_concept,[3],1.0000,0.4000,False,False
+Q026,How do I evaluate quality in production when I don't have the correct answers?,single_concept,[3],0.7500,0.8000,False,False
+Q030,What is a benchmark and what does it consist of?,single_concept,[4],1.0000,1.0000,False,False
+Q034,What is an eval harness and why use one?,single_concept,[4],0.6000,0.8000,False,False
+Q035,What is benchmark contamination?,single_concept,[4],0.5000,0.6000,False,False
+Q037,"What does MMLU measure, and what does it not measure?",single_concept,[5],0.8000,1.0000,False,False
+Q039,What is GPQA and why is it called Google-proof?,single_concept,[6],0.4000,0.8000,False,False
+Q043,Why shouldn't I blindly trust LLM leaderboards?,single_concept,[6],0.5714,0.6000,False,False
+Q044,What's the process for choosing an LLM for my application using custom model evals?,single_concept,[7],0.6000,0.8000,False,False
+Q048,What is the RAG triad?,single_concept,[8],0.7500,0.2000,False,False
+Q049,What is regression testing for an LLM app and what levels of it exist?,single_concept,[8],0.4000,0.6000,False,False
+Q051,"How do offline evals, deployment, online evals and the golden dataset fit together as one loop?",cross_session,"[1, 3, 8]",0.8000,0.8000,False,False
+Q052,"What does a golden dataset contain for different kinds of evals (classification, retrieval, LLM-judge grading, text-to-SQL)?",cross_session,"[1, 2, 7]",0.4000,0.0000,False,False
+Q053,Where does LLM-as-a-judge show up across the course and what are its limitations?,cross_session,"[2, 3, 5, 6]",0.5000,0.8000,False,False
+Q054,"How do I evaluate a retriever, and what metrics do I use?",cross_session,"[2, 8]",0.6000,1.0000,False,False
+Q055,"What is faithfulness (groundedness) and how is it used across offline, online and RAG evaluation?",cross_session,"[2, 3, 8]",0.6000,1.0000,False,False
+Q056,"How does regression testing connect offline evals, baselines and CI?",cross_session,"[3, 8]",0.4000,0.8000,False,False
+Q058,How do multiple failure points and risk categories translate into an actual RAG eval suite?,cross_session,"[2, 8]",0.4000,1.0000,False,False
+Q059,What's the full workflow from benchmarks to choosing a model for my app?,cross_session,"[4, 6, 7]",1.0000,0.8000,False,False
+Q060,Why aren't benchmark scores and leaderboard rankings enough to pick a model?,cross_session,"[4, 6, 7]",1.0000,0.8000,False,False
+Q062,"How do drift and changing data affect the golden dataset over time, and what should I do about it?",cross_session,"[1, 3]",0.7500,0.6000,False,False
+Q065,How are latency and cost treated as evals throughout the course?,cross_session,"[2, 3, 7]",0.2000,0.6000,False,False
+Q066,How are safety evaluations handled across the course?,cross_session,"[2, 3, 8]",0.5000,0.6000,False,False
+Q074,How do reference-free evals apply to online monitoring and the RAG triad?,cross_session,"[2, 3, 8]",0.4000,0.2000,False,False
+Q077,What would a good structured answer to 'How do you evaluate a RAG chatbot?' include?,cross_session,"[2, 3, 8]",0.6000,0.4000,False,False
+Q079,How do I fairly compare two versions or two models of my system?,cross_session,"[1, 3, 4, 8]",1.0000,0.0000,False,True
+Q081,What's the difference between model evals and application evals?,comparison,"[1, 4]",0.6000,0.8000,False,False
+Q082,How do offline evals differ from online evals?,comparison,[3],0.8333,0.8000,False,False
+Q083,Why do I need custom model evals when benchmarks already exist? How are they different?,comparison,"[4, 7]",1.0000,0.8000,False,False
+Q084,What's the difference between reference-based and reference-free evaluation?,comparison,"[2, 3]",1.0000,1.0000,False,False
+Q085,"When should I use a programmatic eval, a human eval or an LLM judge?",comparison,[2],0.7500,0.8000,False,False
+Q086,What's the difference between precision and recall for a RAG retriever?,comparison,"[2, 8]",0.2500,0.6000,False,False
+Q087,"How do context relevance, faithfulness and answer relevance differ?",comparison,[8],0.7500,0.4000,False,False
+Q088,What are captured signals versus computed signals in online evals?,comparison,[3],0.2500,0.2000,False,False
+Q090,"How do component-level, workflow-level and application-level failures differ?",comparison,[2],1.0000,1.0000,False,False
+Q091,How is testing an LLM application different from ordinary software testing?,comparison,[1],0.4000,0.2000,False,False
+Q092,What's the difference between benchmark contamination and benchmark saturation?,comparison,[4],0.7500,0.6000,False,False
+Q093,How does MMLU-Pro differ from MMLU?,comparison,"[5, 6]",0.6000,0.8000,False,False
+Q095,How does SimpleQA compare with TruthfulQA?,comparison,"[5, 6]",0.7500,0.6000,False,False
+Q096,"What are pass@1, pass@k and majority@k?",comparison,[4],1.0000,0.2000,False,False
+Q098,"Are leaderboards a selection tool or a filtering tool, and how does that compare to custom evals?",comparison,"[6, 7]",1.0000,0.6000,False,False

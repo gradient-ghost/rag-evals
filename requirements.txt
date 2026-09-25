@@ -1,0 +1,13 @@
+langchain
+langchain-google-genai
+langchain-groq
+langchain-chroma
+langchain-huggingface
+chroma
+sentence-transformers
+lancedb
+deepeval
+pytest
+python-dotenv
+pydantic
+langchain-text-splitters

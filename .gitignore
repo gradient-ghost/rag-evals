@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Secrets
+.env
+
+# Vector store (binary, re-generatable)
+chroma_store/
+
+# Derived eval artifacts (re-generatable by Phase 1)
+evals/retrieved_context.jsonl
+
+# Scratch scripts
+gemini_check.py
