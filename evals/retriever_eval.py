@@ -1,34 +1,20 @@
-RECALL_SYSTEM_PROMPT = """You are an expert AI evaluator judging the "Contextual Recall" of a Retrieval-Augmented Generation (RAG) system.
-Your task is to determine if the provided retrieved context contains enough information to fully support a list of "golden claims" (ground truth facts).
+MERGED_SYSTEM_PROMPT = """You are an expert AI evaluator judging a Retrieval-Augmented Generation (RAG) system on two dimensions: Contextual Recall and Contextual Precision.
 
-# Instructions:
-1. You will be given retrieved text chunks and a numbered list of golden claims.
-2. For EACH claim, determine if it can be directly attributed to or logically inferred from the retrieved context, without requiring outside knowledge.
-3. Mark `is_supported` true if supported, false if the context is missing the necessary information.
-4. Provide a brief, 1-sentence reasoning for your decision.
-5. You MUST return exactly one verdict per claim, in the same order as the claims are numbered. Do not merge, skip, or add claims. Use `claim_index` to indicate which numbered claim each verdict corresponds to (1-indexed, matching the input numbering).
+You will be given a user question, a numbered list of retrieved chunks (with chunk IDs), and a numbered list of golden claims (ground truth facts). You must produce TWO separate sets of verdicts in a single response.
 
-# Input Format:
-<retrieved_context>
-[Chunk 1 text...]
-[Chunk 2 text...]
-</retrieved_context>
+# Part 1 — Recall (claim-level)
+For EACH golden claim, determine if it can be directly attributed to or logically inferred from the retrieved context as a whole, without requiring outside knowledge. Mark `is_supported` true if supported, false if the context is missing the necessary information. Provide a brief, 1-sentence reasoning for each.
 
-<golden_claims>
-1. [Claim 1]
-2. [Claim 2]
-</golden_claims>
-"""
+# Part 2 — Precision (chunk-level)
+For EACH retrieved chunk, determine if it contains information that directly helps answer the user question. A chunk is relevant (`is_relevant`: true) if it contains ANY fact or context that would be used in the final answer, even partially. Mark false only if the chunk is off-topic, generic filler, or contributes nothing to answering this specific question. Provide a brief, 1-sentence reasoning for each.
 
-PRECISION_SYSTEM_PROMPT = """You are an expert AI evaluator judging the "Contextual Precision" of a Retrieval-Augmented Generation (RAG) system.
-Your task is to determine if specific retrieved text chunks are relevant and useful for answering a given user question.
-
-# Instructions:
-1. You will be given a user question and a numbered list of retrieved chunks (with chunk IDs).
-2. For EACH chunk, determine if it contains information that directly helps answer the question.
-3. A chunk is relevant (`is_relevant`: true) if it contains ANY fact or context that would be used in the final answer, even partially. Mark false only if the chunk is off-topic, generic filler, or contributes nothing to answering this specific question.
-4. Provide a brief, 1-sentence reasoning for your decision.
-5. You MUST return exactly one verdict per chunk, in the same order as given. Do not merge, skip, or add chunks. Use `chunk_id` exactly as given in the input — do not renumber.
+# Rules
+1. Judge recall against the FULL set of retrieved chunks combined — claims are supported by the context as a whole, not by any single chunk.
+2. Judge precision per INDIVIDUAL chunk, independently of whether that chunk contributed to a supported claim.
+3. You MUST return exactly one recall verdict per claim, in the same order as the claims are numbered. Use `claim_index` (1-indexed, matching the input numbering) to indicate which claim each verdict corresponds to. Do not merge, skip, or add claims.
+4. You MUST return exactly one precision verdict per chunk, in the same order as given. Use `chunk_id` exactly as given in the input (do not renumber). Do not merge, skip, or add chunks.
+5. Recall verdicts and precision verdicts are independent judgments — a chunk being irrelevant does not mean claims aren't supported, and vice versa. Do not let one judgment influence the other.
+6. Return both verdict lists even if one of them contains only failures (all false) — never omit a list.
 
 # Input Format:
 <user_question>
@@ -36,9 +22,17 @@ Your task is to determine if specific retrieved text chunks are relevant and use
 </user_question>
 
 <retrieved_chunks>
-[ID: 1] [Chunk text...]
-[ID: 2] [Chunk text...]
+[ID: 1] [Chunk 1 text...]
+[ID: 2] [Chunk 2 text...]
 </retrieved_chunks>
+
+<golden_claims>
+1. [Claim 1]
+2. [Claim 2]
+</golden_claims>
+
+# Output Format:
+Return a single JSON object with exactly two keys: `recall_verdicts` (list of {claim_index, is_supported, reasoning}) and `precision_verdicts` (list of {chunk_id, is_relevant, reasoning}).
 """
 
 # ---------------------------------------------------------------------------
@@ -48,6 +42,7 @@ import csv
 import json
 import logging
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple, Type, TypeVar
 
@@ -65,17 +60,22 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-JUDGE_MODEL = "gemini-3.1-flash-lite"
+JUDGE_MODEL = "gemini-3.5-flash-lite"   # model for this run
+
+# run_id tags every CSV row — change this string when starting a new run config
+RUN_ID = "k8_merged"
 
 PROJECT_ROOT   = Path(__file__).resolve().parents[1]
 GOLDEN_PATH    = PROJECT_ROOT / "goldens/claude_golden_dataset.jsonl"
 RETRIEVED_PATH = PROJECT_ROOT / "evals/retrieved_context.jsonl"
 RESULTS_PATH   = PROJECT_ROOT / "evals/eval_results.csv"
 
+# run_id and timestamp are appended so rows from different runs coexist in one file
 CSV_COLUMNS = [
     "id", "question", "type", "sessions",
     "recall_score", "precision_score",
     "recall_mismatch", "precision_mismatch",
+    "run_id", "timestamp",
 ]
 
 # Retry config
@@ -87,16 +87,12 @@ _RETRY_MAX_ATTEMPTS    = 5
 _RETRYABLE_CODES = {429, 503}
 
 # ---------------------------------------------------------------------------
-# Pydantic schemas (index-based, not text-matched)
+# Pydantic schemas
 # ---------------------------------------------------------------------------
 class ClaimVerdict(BaseModel):
     claim_index: int   # 1-indexed, matches input numbering
     is_supported: bool
     reasoning: str
-
-
-class RecallOutput(BaseModel):
-    verdicts: list[ClaimVerdict]
 
 
 class ChunkVerdict(BaseModel):
@@ -105,8 +101,10 @@ class ChunkVerdict(BaseModel):
     reasoning: str
 
 
-class PrecisionOutput(BaseModel):
-    verdicts: list[ChunkVerdict]
+# Single merged output — both verdict lists in one judge call
+class MergedOutput(BaseModel):
+    recall_verdicts:    list[ClaimVerdict]
+    precision_verdicts: list[ChunkVerdict]
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +145,15 @@ def _call_judge_with_retry(
                 ),
             )
             parsed = response_model.model_validate_json(response.text)
+            # Log token usage from API response for comparison tracking
+            if hasattr(response, "usage_metadata") and response.usage_metadata:
+                u = response.usage_metadata
+                log.info(
+                    "Token usage — prompt: %s, candidates: %s, total: %s",
+                    u.prompt_token_count,
+                    u.candidates_token_count,
+                    u.total_token_count,
+                )
             return parsed, None
 
         except errors.APIError as exc:
@@ -183,7 +190,7 @@ def _call_judge_with_retry(
 # ---------------------------------------------------------------------------
 def run_phase1() -> None:
     """
-    Load the golden dataset, run the retriever for each question (top-5
+    Load the golden dataset, run the retriever for each question (top-8
     chunks), and dump results to RETRIEVED_PATH as JSONL.
 
     If RETRIEVED_PATH already exists the entire phase is skipped so
@@ -205,7 +212,9 @@ def run_phase1() -> None:
     from rag_evals.retriever import build_retriever
 
     log.info("Building retriever (chroma_store must exist at project root) …")
+    # Override k=8 at call site — retriever.py default (k=5) is not touched
     retriever = build_retriever()
+    retriever.search_kwargs = {"k": 8}
 
     RETRIEVED_PATH.parent.mkdir(parents=True, exist_ok=True)
     with RETRIEVED_PATH.open("w", encoding="utf-8") as fh:
@@ -232,11 +241,11 @@ def run_phase1() -> None:
 # ---------------------------------------------------------------------------
 def run_phase2() -> None:
     """
-    For each question in RETRIEVED_PATH, call the recall and precision
-    judges and write one row to RESULTS_PATH immediately (crash-safe).
+    For each question in RETRIEVED_PATH, make ONE merged judge call (recall +
+    precision together) and write one row to RESULTS_PATH immediately (crash-safe).
 
-    Already-completed question IDs (detected by reading RESULTS_PATH)
-    are skipped so the run is safely resumable after a crash or interrupt.
+    Resume logic: skips a question only if (RUN_ID, id) already exists together
+    in the CSV — so re-running with a different run_id re-judges everything.
     """
     log.info("Phase 2 — loading retrieved context from %s …", RETRIEVED_PATH)
     items = [
@@ -245,25 +254,29 @@ def run_phase2() -> None:
         if line.strip()
     ]
 
-    # Build the set of already-completed IDs from any existing CSV.
-    completed_ids: set[str] = set()
+    # Build the set of already-completed (run_id, id) pairs from any existing CSV.
+    # Keying on BOTH run_id + id means a new run_id always starts fresh.
+    completed_pairs: set[tuple[str, str]] = set()
     write_header = True
     if RESULTS_PATH.exists():
         with RESULTS_PATH.open(encoding="utf-8") as fh:
             reader = csv.DictReader(fh)
             for row in reader:
-                completed_ids.add(row["id"])
-        # Header is already present if there are any rows
-        write_header = len(completed_ids) == 0
+                completed_pairs.add((row.get("run_id", ""), row["id"]))
+        write_header = len(completed_pairs) == 0
         log.info(
-            "Resuming — %d questions already complete, %d remaining.",
-            len(completed_ids),
-            len(items) - len(completed_ids),
+            "Resuming — %d (run_id, id) pairs already complete.",
+            len(completed_pairs),
         )
 
     client = genai.Client()
     RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     total = len(items)
+
+    # Accumulate token counts across all questions for a final summary
+    total_prompt_tokens    = 0
+    total_candidate_tokens = 0
+    total_tokens           = 0
 
     with RESULTS_PATH.open("a", encoding="utf-8", newline="") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=CSV_COLUMNS)
@@ -277,38 +290,43 @@ def run_phase2() -> None:
             claims   = item["claims"]
             chunks   = item["chunks"]
 
-            if qid in completed_ids:
-                log.info("[%d/%d] Skipping already-judged: %s", i, total, qid)
+            # Skip only if this exact (run_id, question id) pair is already done
+            if (RUN_ID, qid) in completed_pairs:
+                log.info("[%d/%d] Skipping already-judged: %s (run_id=%s)", i, total, qid, RUN_ID)
                 continue
 
             print(f"\n[{i}/{total}] {question[:70]} …")
 
-            # ── Recall judge ─────────────────────────────────────────────
-            context_text = "\n\n".join(chunks)
-            claims_text  = "\n".join(f"{j + 1}. {c}" for j, c in enumerate(claims))
-            recall_user  = (
-                f"<retrieved_context>\n{context_text}\n</retrieved_context>\n\n"
+            # ── Build ONE user_content string — chunks appear once, not duplicated ──
+            chunks_text = "\n\n".join(f"[ID: {j + 1}] {c}" for j, c in enumerate(chunks))
+            claims_text = "\n".join(f"{j + 1}. {c}" for j, c in enumerate(claims))
+            user_content = (
+                f"<user_question>\n{question}\n</user_question>\n\n"
+                f"<retrieved_chunks>\n{chunks_text}\n</retrieved_chunks>\n\n"
                 f"<golden_claims>\n{claims_text}\n</golden_claims>"
             )
 
-            recall_result, recall_err = _call_judge_with_retry(
-                client, RecallOutput, RECALL_SYSTEM_PROMPT, recall_user
+            # ── ONE merged judge call — both recall and precision in a single request ──
+            merged_result, merged_err = _call_judge_with_retry(
+                client, MergedOutput, MERGED_SYSTEM_PROMPT, user_content
             )
+            # Single sleep after the single call (no inter-call sleep needed anymore)
             time.sleep(5)
 
+            # ── Validate recall verdicts independently ────────────────────────────
             recall_mismatch = False
-            if recall_result is None:
+            if merged_result is None:
                 recall_score    = 0.0
                 recall_mismatch = True
                 log.warning(
-                    "[%s] Recall hard failure: %s — recording 0.0 with MISMATCH.",
-                    qid, recall_err,
+                    "[%s] Merged judge hard failure: %s — recording 0.0 for recall with MISMATCH.",
+                    qid, merged_err,
                 )
             else:
                 expected_claim_indices = set(range(1, len(claims) + 1))
-                returned_claim_indices = {v.claim_index for v in recall_result.verdicts}
+                returned_claim_indices = {v.claim_index for v in merged_result.recall_verdicts}
                 if (
-                    len(recall_result.verdicts) != len(claims)
+                    len(merged_result.recall_verdicts) != len(claims)
                     or returned_claim_indices != expected_claim_indices
                 ):
                     log.warning(
@@ -322,34 +340,23 @@ def run_phase2() -> None:
                     recall_mismatch = True
                 else:
                     recall_score = (
-                        sum(v.is_supported for v in recall_result.verdicts) / len(claims)
+                        sum(v.is_supported for v in merged_result.recall_verdicts) / len(claims)
                     )
 
-            # ── Precision judge ───────────────────────────────────────────
-            chunks_text    = "\n\n".join(f"[ID: {j + 1}] {c}" for j, c in enumerate(chunks))
-            precision_user = (
-                f"<user_question>\n{question}\n</user_question>\n\n"
-                f"<retrieved_chunks>\n{chunks_text}\n</retrieved_chunks>"
-            )
-
-            precision_result, precision_err = _call_judge_with_retry(
-                client, PrecisionOutput, PRECISION_SYSTEM_PROMPT, precision_user
-            )
-            time.sleep(5)
-
+            # ── Validate precision verdicts independently (recall failure doesn't affect this) ──
             precision_mismatch = False
-            if precision_result is None:
+            if merged_result is None:
                 precision_score    = 0.0
                 precision_mismatch = True
                 log.warning(
-                    "[%s] Precision hard failure: %s — recording 0.0 with MISMATCH.",
-                    qid, precision_err,
+                    "[%s] Merged judge hard failure: %s — recording 0.0 for precision with MISMATCH.",
+                    qid, merged_err,
                 )
             else:
                 expected_chunk_ids = set(range(1, len(chunks) + 1))
-                returned_chunk_ids = {v.chunk_id for v in precision_result.verdicts}
+                returned_chunk_ids = {v.chunk_id for v in merged_result.precision_verdicts}
                 if (
-                    len(precision_result.verdicts) != len(chunks)
+                    len(merged_result.precision_verdicts) != len(chunks)
                     or returned_chunk_ids != expected_chunk_ids
                 ):
                     log.warning(
@@ -363,7 +370,7 @@ def run_phase2() -> None:
                     precision_mismatch = True
                 else:
                     precision_score = (
-                        sum(v.is_relevant for v in precision_result.verdicts) / len(chunks)
+                        sum(v.is_relevant for v in merged_result.precision_verdicts) / len(chunks)
                     )
 
             # ── Progress line ─────────────────────────────────────────────
@@ -380,14 +387,16 @@ def run_phase2() -> None:
 
             # ── Write row immediately and flush (crash-safe) ──────────────
             writer.writerow({
-                "id":                qid,
-                "question":          question,
-                "type":              item.get("type", ""),
-                "sessions":          json.dumps(item.get("sessions", [])),
-                "recall_score":      f"{recall_score:.4f}",
-                "precision_score":   f"{precision_score:.4f}",
-                "recall_mismatch":   recall_mismatch,
+                "id":                 qid,
+                "question":           question,
+                "type":               item.get("type", ""),
+                "sessions":           json.dumps(item.get("sessions", [])),
+                "recall_score":       f"{recall_score:.4f}",
+                "precision_score":    f"{precision_score:.4f}",
+                "recall_mismatch":    recall_mismatch,
                 "precision_mismatch": precision_mismatch,
+                "run_id":             RUN_ID,
+                "timestamp":          datetime.now().isoformat(),  # written at flush time
             })
             csvfile.flush()
 
@@ -399,7 +408,7 @@ def run_phase2() -> None:
 # ---------------------------------------------------------------------------
 def compute_final_stats() -> None:
     """
-    Read RESULTS_PATH and print average recall / precision.
+    Read RESULTS_PATH and print average recall / precision for the current RUN_ID.
     MISMATCH rows are included (their score is 0.0 as recorded).
     Works correctly whether this is a full run or a resumed partial run.
     """
@@ -410,9 +419,13 @@ def compute_final_stats() -> None:
     recall_scores    = []
     precision_scores = []
     mismatch_count   = 0
+    total_tokens_sum = 0
 
     with RESULTS_PATH.open(encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
+            # Only aggregate rows belonging to the current run
+            if row.get("run_id", "") != RUN_ID:
+                continue
             recall_scores.append(float(row["recall_score"]))
             precision_scores.append(float(row["precision_score"]))
             if row["recall_mismatch"] == "True" or row["precision_mismatch"] == "True":
@@ -420,13 +433,14 @@ def compute_final_stats() -> None:
 
     n = len(recall_scores)
     if n == 0:
-        log.warning("Results file is empty — nothing to aggregate.")
+        log.warning("No rows found for run_id=%s — nothing to aggregate.", RUN_ID)
         return
 
     avg_recall    = sum(recall_scores)    / n
     avg_precision = sum(precision_scores) / n
 
     print("\n" + "=" * 52)
+    print(f"  Run ID               : {RUN_ID}")
     print(f"  Questions evaluated  : {n}")
     print(f"  Questions w/ MISMATCH: {mismatch_count}")
     print(f"  Avg Recall           : {avg_recall:.4f}")
@@ -438,6 +452,14 @@ def compute_final_stats() -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
+    # Rename the old k=5 retrieved_context.jsonl so phase 1 runs fresh with k=8.
+    # If already renamed (or never existed), this is a no-op.
+    old_retrieved = PROJECT_ROOT / "evals/retrieved_context.jsonl"
+    new_retrieved = PROJECT_ROOT / "evals/retrieved_context_k5_baseline.jsonl"
+    if old_retrieved.exists() and not new_retrieved.exists():
+        old_retrieved.rename(new_retrieved)
+        log.info("Renamed %s → %s (forcing fresh k=8 retrieval).", old_retrieved.name, new_retrieved.name)
+
     run_phase1()
     run_phase2()
     compute_final_stats()
