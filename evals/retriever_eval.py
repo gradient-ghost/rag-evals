@@ -67,8 +67,8 @@ RUN_ID = "k8_merged"
 
 PROJECT_ROOT   = Path(__file__).resolve().parents[1]
 GOLDEN_PATH    = PROJECT_ROOT / "goldens/claude_golden_dataset.jsonl"
-RETRIEVED_PATH = PROJECT_ROOT / "evals/retrieved_context.jsonl"
-RESULTS_PATH   = PROJECT_ROOT / "evals/eval_results.csv"
+RETRIEVED_PATH = PROJECT_ROOT / "data/contexts/retrieved_context.jsonl"
+RESULTS_PATH   = PROJECT_ROOT / "results/retriever_eval_results.csv"
 
 # run_id and timestamp are appended so rows from different runs coexist in one file
 CSV_COLUMNS = [
@@ -454,8 +454,8 @@ def compute_final_stats() -> None:
 if __name__ == "__main__":
     # Rename the old k=5 retrieved_context.jsonl so phase 1 runs fresh with k=8.
     # If already renamed (or never existed), this is a no-op.
-    old_retrieved = PROJECT_ROOT / "evals/retrieved_context.jsonl"
-    new_retrieved = PROJECT_ROOT / "evals/retrieved_context_k5_baseline.jsonl"
+    old_retrieved = PROJECT_ROOT / "data/contexts/retrieved_context.jsonl"
+    new_retrieved = PROJECT_ROOT / "data/contexts/retrieved_context_k5_baseline.jsonl"
     if old_retrieved.exists() and not new_retrieved.exists():
         old_retrieved.rename(new_retrieved)
         log.info("Renamed %s → %s (forcing fresh k=8 retrieval).", old_retrieved.name, new_retrieved.name)

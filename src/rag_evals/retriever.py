@@ -12,7 +12,7 @@ from langchain_core.documents import Document
 load_dotenv()
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = str(PROJECT_ROOT / "data")
+DATA_DIR = str(PROJECT_ROOT / "data" / "raw")
 DB_DIR = str(PROJECT_ROOT / "chroma_store")
 
 

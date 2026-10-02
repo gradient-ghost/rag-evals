@@ -8,7 +8,7 @@ import json
 import os
 
 ROOT        = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CHUNKS_PATH = os.path.join(ROOT, "evals", "retrieved_chunks.jsonl")
+CHUNKS_PATH = os.path.join(ROOT, "data", "contexts", "retrieved_chunks.jsonl")
 GOLDEN_PATH = os.path.join(ROOT, "goldens", "generator_golden_dataset.jsonl")
 
 # --- Load chunks ---

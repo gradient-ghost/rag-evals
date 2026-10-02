@@ -37,8 +37,8 @@ RUN_ID = "baseline_21"
 SLEEP_SECONDS = 30  # ~2 RPM — conservative given only 2 RPM headroom on gemini-3.7-flash
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-INPUT_FILE = PROJECT_ROOT / "evals/generated_answers.jsonl"
-OUTPUT_FILE = PROJECT_ROOT / "evals/generator_evals.csv"
+INPUT_FILE = PROJECT_ROOT / "data/contexts/generated_answers.jsonl"
+OUTPUT_FILE = PROJECT_ROOT / "results/generator_evals.csv"
 
 CSV_COLUMNS = [
     "id",

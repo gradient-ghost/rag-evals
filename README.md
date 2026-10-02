@@ -18,8 +18,8 @@ Evaluates the vector store and embedding search against a 50-question golden dat
 
 | Run | k | Judge Calls | Avg Recall | Avg Precision | Raw Results |
 |---|---|---|---|---|---|
-| `k5_baseline_dualcall` | 5 | 2 / question | 0.659 | 0.648 | [`evals/k5_baseline_dualcall_ret_eval.csv`](evals/k5_baseline_dualcall_ret_eval.csv) |
-| `k8_merged` (current) | 8 | 1 / question | **0.768** | **0.728** | [`evals/retriever_eval_results.csv`](evals/retriever_eval_results.csv) |
+| `k5_baseline_dualcall` | 5 | 2 / question | 0.659 | 0.648 | [`results/k5_baseline_dualcall_ret_eval.csv`](results/k5_baseline_dualcall_ret_eval.csv) |
+| `k8_merged` (current) | 8 | 1 / question | **0.768** | **0.728** | [`results/retriever_eval_results.csv`](results/retriever_eval_results.csv) |
 
 *Detailed reports: [`docs/k5_baseline_dualcall_eval.md`](docs/k5_baseline_dualcall_eval.md), [`docs/k8_merged_eval_results.md`](docs/k8_merged_eval_results.md).*
 
@@ -51,7 +51,7 @@ Evaluates the LLM generation component on answer quality and hallucination preve
 | **Avg Relevancy** | **0.851** | **0.993** | 17/18 answered queries scored a perfect 1.0 |
 | **Abstentions / Refusals** | **3 (14.3%)** | — | Triggered negative constraint due to context gaps |
 
-*Raw data: [`evals/generated_answers.jsonl`](evals/generated_answers.jsonl), [`evals/generator_evals.csv`](evals/generator_evals.csv).*
+*Raw data: [`data/contexts/generated_answers.jsonl`](data/contexts/generated_answers.jsonl), [`results/generator_evals.csv`](results/generator_evals.csv).*
 *Detailed report: [`docs/generator_baseline_eval.md`](docs/generator_baseline_eval.md).*
 
 ### Key Findings

@@ -11,7 +11,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DB_DIR = str(PROJECT_ROOT / "chroma_store")
-OUTPUT_FILE = PROJECT_ROOT / "retrieved_chunks.jsonl"
+OUTPUT_FILE = PROJECT_ROOT / "data/contexts/retrieved_chunks.jsonl"
 
 
 def main():

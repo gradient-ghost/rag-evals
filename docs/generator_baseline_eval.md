@@ -1,6 +1,6 @@
 # 📊 Generator Baseline Evaluation Analysis — `baseline_21` Run
 
-**Source:** [`evals/generator_evals.csv`](../evals/generator_evals.csv)  
+**Source:** [`results/generator_evals.csv`](../results/generator_evals.csv)  
 **Run ID:** `baseline_21`  
 **Generator Model:** `gemini-3.5-flash` ($T=0.0$)  
 **Judge Model:** `gemini-3.8-flash`  
@@ -39,7 +39,7 @@
 ## 3. Deep Dive into Non-1.0 Cases
 
 ### A. The 3 Refusals: Why Did the Model Abstain?
-Inspecting the context chunks in [`evals/generated_answers.jsonl`](../evals/generated_answers.jsonl) reveals that the model **correctly abstained** due to information gaps in the golden context:
+Inspecting the context chunks in [`data/contexts/generated_answers.jsonl`](../data/contexts/generated_answers.jsonl) reveals that the model **correctly abstained** due to information gaps in the golden context:
 
 1. **`q010`** (*"how are safety issues like toxicity evaluated differently from quality issues?"*):
    * **Context Content**: Mentions that safety has separate pipelines (code injection, toxicity) and quality has separate pipelines (hallucination, correctness), but does not detail *how* the evaluation methodology differs.
@@ -61,7 +61,7 @@ Inspecting the context chunks in [`evals/generated_answers.jsonl`](../evals/gene
 ## 4. Operational & Engineering Observations
 
 * **Resume Logic & Crash Safety Verified**:
-  * In [`evals/generator_evals.csv`](../evals/generator_evals.csv), questions `q001`–`q004` completed in the first run (~15:28 UTC), and `q005`–`q021` resumed cleanly at 16:09 UTC without re-running earlier items or losing any data.
+  * In [`results/generator_evals.csv`](../results/generator_evals.csv), questions `q001`–`q004` completed in the first run (~15:28 UTC), and `q005`–`q021` resumed cleanly at 16:09 UTC without re-running earlier items or losing any data.
 * **Strict Grounding Adherence**:
   * The generator's system prompt successfully prevented extrapolation and speculation across the board. The model exhibited zero false confidence or hallucination on difficult/incomplete contexts.
 

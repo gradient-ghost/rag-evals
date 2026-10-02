@@ -35,7 +35,7 @@ INTER_QUESTION_DELAY = 15  # seconds (throttles to 4 RPM to stay safely within t
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 INPUT_PATH = PROJECT_ROOT / "goldens/generator_golden_dataset.jsonl"
-OUTPUT_PATH = PROJECT_ROOT / "evals/generated_answers.jsonl"
+OUTPUT_PATH = PROJECT_ROOT / "data/contexts/generated_answers.jsonl"
 
 SYSTEM_PROMPT = """
 You are a factual, strictly grounded question-answering assistant. Your sole task is to answer the user's question using ONLY the facts explicitly provided in the retrieved context chunks.

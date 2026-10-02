@@ -1,6 +1,6 @@
 # 📊 Eval Results Summary — `k8_merged` Run
 
-**Source:** `evals/eval_results.csv`
+**Source:** `results/retriever_eval_results.csv`
 **Run ID:** `k8_merged`
 **Timestamp:** `2026-09-26`
 **Total Questions:** 50

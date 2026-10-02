@@ -15,8 +15,8 @@ import csv
 import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-JSON_PATH = os.path.join(ROOT, "faithfulness_dataset.json")
-CSV_PATH  = os.path.join(ROOT, "golden_dataset_faithfulness.csv")
+JSON_PATH = os.path.join(ROOT, "goldens", "faithfulness_dataset.json")
+CSV_PATH  = os.path.join(ROOT, "goldens", "golden_dataset_faithfulness.csv")
 OUT_PATH  = os.path.join(ROOT, "goldens", "generator_golden_dataset.jsonl")
 
 os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)

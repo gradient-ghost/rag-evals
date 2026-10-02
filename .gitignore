@@ -16,7 +16,7 @@ wheels/
 chroma_store/
 
 # Derived eval artifacts (re-generatable by Phase 1)
-# evals/retrieved_context.jsonl
+# data/contexts/retrieved_context.jsonl
 
 # Scratch scripts
 gemini_check.py
