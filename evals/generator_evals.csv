@@ -1,0 +1,23 @@
+id,question,faithfulness_score,relevance_score,has_hallucination,run_id,timestamp
+id,question,faithfulness_score,relevance_score,has_hallucination,run_id,timestamp
+q001,what is vibe testing and why isn't it enough for deploying an llm app?,1.0,1.0,False,baseline_21,2026-10-02T15:26:35.653050+00:00
+q002,what is the mmlu benchmark?,1.0,0.875,False,baseline_21,2026-10-02T15:27:14.520437+00:00
+q003,how did mmlu pro improve on the original mmlu?,1.0,1.0,False,baseline_21,2026-10-02T15:27:50.355022+00:00
+q004,can you give a real-world example of an llm application failing badly?,1.0,1.0,False,baseline_21,2026-10-02T15:28:17.873093+00:00
+q005,what is drift and why does it matter after deployment?,1.0,1.0,False,baseline_21,2026-10-02T16:09:49.000445+00:00
+q006,why do we use an llm as a judge instead of simple string matching?,1.0,1.0,False,baseline_21,2026-10-02T16:10:21.008810+00:00
+q007,how does sampling work in online evaluation?,1.0,1.0,False,baseline_21,2026-10-02T16:10:53.795460+00:00
+q008,what are computed and captured signals in online eval?,1.0,1.0,False,baseline_21,2026-10-02T16:11:25.868617+00:00
+q009,what does it mean for a benchmark to get saturated?,1.0,1.0,False,baseline_21,2026-10-02T16:11:58.268233+00:00
+q010,how are safety issues like toxicity evaluated differently from quality issues?,1.0,0.0,False,baseline_21,2026-10-02T16:12:29.255005+00:00
+q011,does training on more data always make an llm more knowledgeable?,1.0,0.0,False,baseline_21,2026-10-02T16:13:00.920202+00:00
+q012,what information should i store when logging production conversations?,1.0,1.0,False,baseline_21,2026-10-02T16:13:33.624707+00:00
+q013,how can thumbs up and thumbs down signals help build a golden dataset?,1.0,0.0,False,baseline_21,2026-10-02T16:14:04.982724+00:00
+q014,how does a step-by-step prompt help an llm solve a math problem?,1.0,1.0,False,baseline_21,2026-10-02T16:14:36.311163+00:00
+q015,what is the rag triad and what does each of its three metrics check?,1.0,1.0,False,baseline_21,2026-10-02T16:15:08.716886+00:00
+q016,"what are the three risk categories for an llm application, and what does each cover?",1.0,1.0,False,baseline_21,2026-10-02T16:15:40.859485+00:00
+q017,"is there a limit on how big a golden dataset should be, and what constraints stop you from making it very large?",1.0,1.0,False,baseline_21,2026-10-02T16:16:12.845292+00:00
+q018,what are the key differences between software testing and llm evaluation?,1.0,1.0,False,baseline_21,2026-10-02T16:16:45.015419+00:00
+q019,what is humanity's last exam (hle) and why did the researchers give it that name?,1.0,1.0,False,baseline_21,2026-10-02T16:17:17.624462+00:00
+q020,why does a rag chatbot need separate evaluation pipelines for the retriever and the generator?,1.0,1.0,False,baseline_21,2026-10-02T16:17:49.862611+00:00
+q021,"what does faithfulness (groundedness) mean when evaluating a generator, and what would an unfaithful answer look like?",1.0,1.0,False,baseline_21,2026-10-02T16:18:21.904856+00:00
