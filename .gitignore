@@ -20,3 +20,6 @@ chroma_store/
 
 # Scratch scripts
 gemini_check.py
+
+# VS Code settings
+.vscode/
