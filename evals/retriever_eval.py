@@ -41,6 +41,8 @@ Return a single JSON object with exactly two keys: `recall_verdicts` (list of {c
 import csv
 import json
 import logging
+import subprocess
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -63,11 +65,12 @@ log = logging.getLogger(__name__)
 JUDGE_MODEL = "gemini-3.5-flash-lite"   # model for this run
 
 # run_id tags every CSV row — change this string when starting a new run config
-RUN_ID = "k8_merged"
+RUN_ID = "reranker_bge_v2"
 
 PROJECT_ROOT   = Path(__file__).resolve().parents[1]
-GOLDEN_PATH    = PROJECT_ROOT / "goldens/claude_golden_dataset.jsonl"
-RETRIEVED_PATH = PROJECT_ROOT / "data/contexts/retrieved_context.jsonl"
+GOLDEN_PATH    = PROJECT_ROOT / "goldens/retriever_golden.jsonl"
+CANDIDATES_PATH = PROJECT_ROOT / "data/contexts/candidates_k16.jsonl"
+RETRIEVED_PATH = PROJECT_ROOT / "data/contexts/retrieved_context_reranker.jsonl"
 RESULTS_PATH   = PROJECT_ROOT / "results/retriever_eval_results.csv"
 
 # run_id and timestamp are appended so rows from different runs coexist in one file
@@ -186,21 +189,14 @@ def _call_judge_with_retry(
 
 
 # ---------------------------------------------------------------------------
-# Phase 1 — Retrieval (no API judge calls, run once)
+# Phase 1 — Retrieval (two isolated subprocesses to avoid GPU OOM)
 # ---------------------------------------------------------------------------
-def run_phase1() -> None:
+def run_phase1a() -> None:
+    """Pass 1A (isolated process):
+    Load base embedding model, fetch k=16 candidates per question, and write
+    to CANDIDATES_PATH. Process exits immediately afterwards to free GPU VRAM.
     """
-    Load the golden dataset, run the retriever for each question (top-8
-    chunks), and dump results to RETRIEVED_PATH as JSONL.
-
-    If RETRIEVED_PATH already exists the entire phase is skipped so
-    embeddings / the vector store are never re-queried unnecessarily.
-    """
-    if RETRIEVED_PATH.exists():
-        log.info("Phase 1 skipped — %s already exists.", RETRIEVED_PATH)
-        return
-
-    log.info("Phase 1 — loading golden dataset from %s …", GOLDEN_PATH)
+    log.info("Phase 1A (isolated subprocess) — loading golden dataset from %s …", GOLDEN_PATH)
     goldens = [
         json.loads(line)
         for line in GOLDEN_PATH.read_text().splitlines()
@@ -208,32 +204,110 @@ def run_phase1() -> None:
     ]
     log.info("Loaded %d golden items.", len(goldens))
 
-    # Import here so the heavy embedding model is only loaded when needed.
     from rag_evals.retriever import build_retriever
 
-    log.info("Building retriever (chroma_store must exist at project root) …")
-    # Override k=8 at call site — retriever.py default (k=5) is not touched
-    retriever = build_retriever()
-    retriever.search_kwargs = {"k": 8}
+    log.info("Building base embedding retriever (k=16) …")
+    base_retriever = build_retriever(use_reranker=False)
+    base_retriever.search_kwargs = {"k": 16}
 
-    RETRIEVED_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with RETRIEVED_PATH.open("w", encoding="utf-8") as fh:
+    CANDIDATES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with CANDIDATES_PATH.open("w", encoding="utf-8") as fh:
         for i, item in enumerate(goldens, start=1):
             question = item["question"]
-            log.info("[%d/%d] Retrieving for: %s …", i, len(goldens), question[:60])
-            docs   = retriever.invoke(question)
-            chunks = [doc.page_content for doc in docs]
+            log.info("[%d/%d] Retrieving candidates for: %s …", i, len(goldens), question[:60])
+            docs = base_retriever.invoke(question)
             record = {
-                "id":       item["id"],
+                "id": item["id"],
                 "question": question,
-                "type":     item.get("type", ""),
+                "type": item.get("type", ""),
                 "sessions": item.get("sessions", []),
-                "claims":   item.get("claims", []),
-                "chunks":   chunks,
+                "claims": item.get("claims", []),
+                "candidate_chunks": [doc.page_content for doc in docs],
             }
             fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-    log.info("Phase 1 complete — wrote %d records to %s.", len(goldens), RETRIEVED_PATH)
+    log.info("Phase 1A complete — saved %d candidate sets to %s.", len(goldens), CANDIDATES_PATH)
+
+
+def run_phase1b() -> None:
+    """Pass 1B (isolated process):
+    Start with clean GPU memory, load cross-encoder, rerank candidates from
+    CANDIDATES_PATH to top-5, and save to RETRIEVED_PATH.
+    """
+    log.info("Phase 1B (isolated subprocess) — loading candidates from %s …", CANDIDATES_PATH)
+    items = [
+        json.loads(line)
+        for line in CANDIDATES_PATH.read_text().splitlines()
+        if line.strip()
+    ]
+    log.info("Loaded %d candidate records.", len(items))
+
+    import torch
+    from sentence_transformers import CrossEncoder
+    from rag_evals.retriever import RERANKER_MODEL_NAME
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    log.info("Loading reranker %s on %s …", RERANKER_MODEL_NAME, device)
+    cross_encoder = CrossEncoder(
+        RERANKER_MODEL_NAME,
+        device=device,
+        trust_remote_code=True,
+        max_length=512,
+    )
+
+    RETRIEVED_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with RETRIEVED_PATH.open("w", encoding="utf-8") as fh:
+        for i, item in enumerate(items, start=1):
+            question = item["question"]
+            candidates = item.get("candidate_chunks", [])
+            log.info("[%d/%d] Reranking: %s …", i, len(items), question[:60])
+            if candidates:
+                pairs = [(question, chunk) for chunk in candidates]
+                scores = cross_encoder.predict(pairs)
+                ranked = sorted(zip(scores, candidates), key=lambda x: x[0], reverse=True)
+                top_chunks = [chunk for _, chunk in ranked[:5]]
+            else:
+                top_chunks = []
+
+            record = {
+                "id": item["id"],
+                "question": question,
+                "type": item.get("type", ""),
+                "sessions": item.get("sessions", []),
+                "claims": item.get("claims", []),
+                "chunks": top_chunks,
+            }
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    log.info("Phase 1B complete — wrote %d records to %s.", len(items), RETRIEVED_PATH)
+
+
+def run_phase1() -> None:
+    """Orchestrate Phase 1 via isolated subprocesses so embedding and reranker
+    models never compete for GPU memory in the same Python process.
+    """
+    if RETRIEVED_PATH.exists():
+        log.info("Phase 1 skipped — %s already exists.", RETRIEVED_PATH)
+        return
+
+    goldens_count = sum(1 for line in GOLDEN_PATH.read_text().splitlines() if line.strip())
+    need_1a = True
+    if CANDIDATES_PATH.exists():
+        cands_count = sum(1 for line in CANDIDATES_PATH.read_text().splitlines() if line.strip())
+        if cands_count == goldens_count:
+            need_1a = False
+
+    this_script = str(Path(__file__).resolve())
+
+    if need_1a:
+        log.info("Spawning Phase 1A subprocess (Candidate retrieval with BGE-M3) …")
+        subprocess.run([sys.executable, this_script, "--phase1a"], check=True)
+    else:
+        log.info("Found %s with %d items — skipping Phase 1A.", CANDIDATES_PATH.name, goldens_count)
+
+    log.info("Spawning Phase 1B subprocess (Reranking with BGE-Reranker-v2-m3) …")
+    subprocess.run([sys.executable, this_script, "--phase1b"], check=True)
+    log.info("Phase 1 successfully finished.")
 
 
 # ---------------------------------------------------------------------------
@@ -452,14 +526,11 @@ def compute_final_stats() -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    # Rename the old k=5 retrieved_context.jsonl so phase 1 runs fresh with k=8.
-    # If already renamed (or never existed), this is a no-op.
-    old_retrieved = PROJECT_ROOT / "data/contexts/retrieved_context.jsonl"
-    new_retrieved = PROJECT_ROOT / "data/contexts/retrieved_context_k5_baseline.jsonl"
-    if old_retrieved.exists() and not new_retrieved.exists():
-        old_retrieved.rename(new_retrieved)
-        log.info("Renamed %s → %s (forcing fresh k=8 retrieval).", old_retrieved.name, new_retrieved.name)
-
-    run_phase1()
-    run_phase2()
-    compute_final_stats()
+    if "--phase1a" in sys.argv:
+        run_phase1a()
+    elif "--phase1b" in sys.argv:
+        run_phase1b()
+    else:
+        run_phase1()
+        run_phase2()
+        compute_final_stats()
