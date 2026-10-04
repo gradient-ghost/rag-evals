@@ -33,22 +33,33 @@ from google.genai import types
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CHROMA_PATH = str(PROJECT_ROOT / "chroma_store")
-MODEL_ID = "gemini-3.8-flash"
+MODEL_ID = os.getenv("GENERATOR_MODEL", "gemini-3.5-flash-lite")
 K = 8
 INTER_QUESTION_DELAY = 15   # seconds between questions (free tier: 5 req/min)
-MAX_RETRIES = 3              # retry attempts on 503
-BASE_RETRY_DELAY = 10        # seconds — doubles each attempt (10 → 20 → 40)
+MAX_RETRIES = 5              # retry attempts on 503
+BASE_RETRY_DELAY = 5         # seconds — doubles each attempt (5 → 10 → 20 → 40)
+
+from typing import Optional
 
 # ---------------------------------------------------------------------------
-# Eagerly load embedding model once at import time (no HF noise)
+# Lazy embedding function loader (avoids VRAM/RAM overhead when importing generator)
 # ---------------------------------------------------------------------------
 
-print("Loading embedding model...", end="", flush=True)
-_EMBEDDING_FN = SentenceTransformerEmbeddingFunction(
-    model_name="BAAI/bge-m3",
-    normalize_embeddings=True,
-)
-print(" done.")
+_EMBEDDING_FN = None
+
+
+def _get_embedding_fn() -> SentenceTransformerEmbeddingFunction:
+    """Lazily loads the embedding model only if legacy standalone generate_answer() is called."""
+    global _EMBEDDING_FN
+    if _EMBEDDING_FN is None:
+        print("Loading embedding model for generator...", end="", flush=True)
+        _EMBEDDING_FN = SentenceTransformerEmbeddingFunction(
+            model_name="BAAI/bge-m3",
+            normalize_embeddings=True,
+        )
+        print(" done.")
+    return _EMBEDDING_FN
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -79,8 +90,61 @@ def _generate_with_retry(
             else:
                 raise
 
+
 # ---------------------------------------------------------------------------
-# Core function
+# Core Generation Function
+# ---------------------------------------------------------------------------
+
+def generate_response(
+    question: str,
+    context_chunks: list[str],
+    client: Optional[genai.Client] = None,
+    model: str = MODEL_ID,
+    system_prompt: str = GENERATOR_SYSTEM_PROMPT,
+) -> str:
+    """Formats prompt with context chunks and calls Gemini with the strict system prompt.
+
+    Args:
+        question: The user question.
+        context_chunks: The retrieved context chunks to ground the answer.
+        client: Optional google.genai.Client instance. If None, instantiates one.
+        model: Target Gemini model ID (defaults to gemini-3.8-flash).
+        system_prompt: System prompt instructing the model (defaults to GENERATOR_SYSTEM_PROMPT).
+
+    Returns:
+        The generated answer string.
+    """
+    if not os.environ.get("GEMINI_API_KEY"):
+        raise EnvironmentError(
+            "GEMINI_API_KEY is not set. Export it before running: "
+            "export GEMINI_API_KEY=<your-key>"
+        )
+
+    # --- Prompt formatting ---
+    context_block = "\n".join(f"[{i + 1}] {chunk}" for i, chunk in enumerate(context_chunks))
+    user_prompt = (
+        f"Context:\n---\n{context_block}\n---\n\n"
+        f"Question: {question}"
+    )
+
+    if client is None:
+        client = genai.Client()
+
+    response = _generate_with_retry(
+        client=client,
+        model=model,
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            temperature=0.0,
+        ),
+    )
+
+    return response.text or ""
+
+
+# ---------------------------------------------------------------------------
+# Legacy Standalone function (kept for backward compatibility)
 # ---------------------------------------------------------------------------
 
 def generate_answer(question: str, collection_name: str = "langchain") -> dict:
@@ -103,7 +167,7 @@ def generate_answer(question: str, collection_name: str = "langchain") -> dict:
     try:
         collection = chroma_client.get_collection(
             name=collection_name,
-            embedding_function=_EMBEDDING_FN,
+            embedding_function=_get_embedding_fn(),
         )
     except Exception as exc:
         raise RuntimeError(
@@ -114,29 +178,12 @@ def generate_answer(question: str, collection_name: str = "langchain") -> dict:
     results = collection.query(query_texts=[question], n_results=K)
     chunks: list[str] = results["documents"][0]
 
-    # --- Prompt formatting ---
-    context_block = "\n".join(f"[{i + 1}] {chunk}" for i, chunk in enumerate(chunks))
-    user_prompt = (
-        f"Context:\n---\n{context_block}\n---\n\n"
-        f"Question: {question}"
-    )
-
-    # --- Generation (with retry) ---
-    client = genai.Client()
-    response = _generate_with_retry(
-        client=client,
-        model=MODEL_ID,
-        contents=user_prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=GENERATOR_SYSTEM_PROMPT,
-            temperature=0.0,
-        ),
-    )
+    answer = generate_response(question=question, context_chunks=chunks)
 
     return {
         "question": question,
         "context_chunks": chunks,
-        "response": response.text,
+        "response": answer,
     }
 
 

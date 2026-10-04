@@ -1,8 +1,9 @@
+import logging
 import os
 import re
 import glob
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
@@ -14,6 +15,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import CrossEncoder
 
 load_dotenv()
+
+log = logging.getLogger(__name__)
 
 # Cross-encoder model used for reranking — referenced by both build_retriever()
 # and the two-pass eval helper rerank_docs().
@@ -45,15 +48,17 @@ def load_transcripts() -> List[Document]:
     return docs
 
 
+import torch
+
 # ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
 
-def load_store() -> Chroma:
+def load_store(device: str = "cuda") -> Chroma:
     """Chunk, embed once, keep it on disk."""
     embeddings = HuggingFaceEmbeddings(
         model_name="BAAI/bge-m3",
-        model_kwargs={"device": "cuda"},
+        model_kwargs={"device": device},
         encode_kwargs={"normalize_embeddings": True},
     )
 
@@ -71,6 +76,8 @@ def load_store() -> Chroma:
 # Reranker retriever
 # ---------------------------------------------------------------------------
 
+from pydantic import ConfigDict
+
 class RerankedRetriever(BaseRetriever):
     """Two-stage retriever: wide Chroma search → cross-encoder rerank → top-n.
 
@@ -83,8 +90,7 @@ class RerankedRetriever(BaseRetriever):
     fetch_k: int = 16
     top_n: int = 5
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def _get_relevant_documents(
         self,
@@ -108,32 +114,65 @@ class RerankedRetriever(BaseRetriever):
 # Public API
 # ---------------------------------------------------------------------------
 
-def build_retriever(use_reranker: bool = False) -> BaseRetriever:
+def build_retriever(
+    use_reranker: bool = False,
+    embedding_device: Optional[str] = None,
+    reranker_device: Optional[str] = None,
+    fetch_k: int = 16,
+    top_n: int = 5,
+) -> BaseRetriever:
     """Return a retriever over the Chroma store.
 
     Args:
         use_reranker: When False (default), returns a plain similarity retriever
-            with k=5 — identical to the original behaviour.  When True, fetches
-            k=16 candidates from Chroma then reranks with BAAI/bge-reranker-v2-m3
-            and returns the top 5, trading latency for higher precision.
+            with k=top_n. When True, fetches k candidates from Chroma then reranks
+            with BAAI/bge-reranker-v2-m3 and returns the top_n.
+        embedding_device: Torch device for the BGE-M3 embedding model ('cpu' or 'cuda').
+            Defaults to 'cpu' when use_reranker=True (to conserve GPU memory for the reranker)
+            or 'cuda' if available when use_reranker=False.
+        reranker_device: Torch device for the cross-encoder ('cuda' or 'cpu').
+            Defaults to 'cuda' if CUDA is available, else 'cpu'.
+        fetch_k: Number of candidate chunks to fetch before reranking (default 16).
+        top_n: Final number of chunks to return (default 5).
     """
-    store = load_store()
+    has_cuda = torch.cuda.is_available()
+
+    if use_reranker:
+        emb_dev = embedding_device or "cpu"
+        rerank_dev = reranker_device or ("cuda" if has_cuda else "cpu")
+    else:
+        emb_dev = embedding_device or ("cuda" if has_cuda else "cpu")
+        rerank_dev = reranker_device or ("cuda" if has_cuda else "cpu")
+
+    # Guard against CUDA OOM when other processes (e.g. llama-server) occupy VRAM
+    if rerank_dev == "cuda" and has_cuda:
+        try:
+            free_mem, _ = torch.cuda.mem_get_info()
+            # BGE-reranker-v2-m3 requires ~2.1 GB VRAM
+            if free_mem < 2.0 * (1024 ** 3):
+                log.warning(
+                    "CUDA available but only %.1f MB VRAM free (< 2000 MB required for reranker). "
+                    "Another process (e.g. llama-server / LM Studio) may be holding GPU memory. "
+                    "Falling back to CPU for reranker to prevent OOM.",
+                    free_mem / (1024 ** 2),
+                )
+                rerank_dev = "cpu"
+        except Exception:
+            pass
+
+    store = load_store(device=emb_dev)
 
     if not use_reranker:
-        return store.as_retriever(search_kwargs={"k": 5})
+        return store.as_retriever(search_kwargs={"k": top_n})
 
     # ── Reranker path ─────────────────────────────────────────────────────────
-    # NOTE: bge-reranker-v2-m3 (~2.1 GB) and bge-m3 embeddings (~3.5 GB) cannot
-    # coexist on a small GPU. Use rerank_docs() from the eval harness for a
-    # two-pass approach. build_retriever(use_reranker=True) is safe only when
-    # the embedding model has been freed from VRAM beforehand.
     cross_encoder = CrossEncoder(
         RERANKER_MODEL_NAME,
-        device="cuda",
+        device=rerank_dev,
         trust_remote_code=True,
         max_length=512,
     )
-    return RerankedRetriever(store=store, cross_encoder=cross_encoder, fetch_k=16, top_n=5)
+    return RerankedRetriever(store=store, cross_encoder=cross_encoder, fetch_k=fetch_k, top_n=top_n)
 
 
 # ---------------------------------------------------------------------------

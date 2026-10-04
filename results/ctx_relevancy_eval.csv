@@ -1,0 +1,21 @@
+id,question,contextual_relevancy_score,relevant_claims,total_claims,run_id,timestamp
+Q037,"What does MMLU measure, and what does it not measure?",1.0,8,8,ctx_relevancey_v1,2026-10-04T06:24:59.828817+00:00
+Q010,What are the three levels at which an LLM application can fail and be evaluated?,0.8,4,5,ctx_relevancey_v1,2026-10-04T06:25:17.856858+00:00
+Q081,What's the difference between model evals and application evals?,0.857,6,7,ctx_relevancey_v1,2026-10-04T06:25:35.630208+00:00
+Q066,How are safety evaluations handled across the course?,1.0,5,5,ctx_relevancey_v1,2026-10-04T06:25:53.282950+00:00
+Q060,Why aren't benchmark scores and leaderboard rankings enough to pick a model?,1.0,6,6,ctx_relevancey_v1,2026-10-04T06:26:10.884699+00:00
+Q044,What's the process for choosing an LLM for my application using custom model evals?,1.0,6,6,ctx_relevancey_v1,2026-10-04T06:26:28.556003+00:00
+Q035,What is benchmark contamination?,0.6,3,5,ctx_relevancey_v1,2026-10-04T06:26:46.158310+00:00
+Q030,What is a benchmark and what does it consist of?,0.8,4,5,ctx_relevancey_v1,2026-10-04T06:27:03.625316+00:00
+Q083,Why do I need custom model evals when benchmarks already exist? How are they different?,0.667,4,6,ctx_relevancey_v1,2026-10-04T06:27:21.217381+00:00
+Q059,What's the full workflow from benchmarks to choosing a model for my app?,1.0,4,4,ctx_relevancey_v1,2026-10-04T06:27:38.723676+00:00
+Q007,What is a golden dataset and how is one created?,0.875,7,8,ctx_relevancey_v1,2026-10-04T06:27:56.675191+00:00
+Q005,What are application evals and why do they matter if we already have model evals?,0.8,4,5,ctx_relevancey_v1,2026-10-04T06:28:14.144354+00:00
+Q014,What are the different eval methods and who actually executes the evaluation?,0.667,4,6,ctx_relevancey_v1,2026-10-04T06:28:31.800852+00:00
+q015,what is the rag triad and what does each of its three metrics check?,0.714,5,7,ctx_relevancey_v1,2026-10-04T06:28:50.402616+00:00
+q021,"what does faithfulness (groundedness) mean when evaluating a generator, and what would an unfaithful answer look like?",0.714,5,7,ctx_relevancey_v1,2026-10-04T06:29:08.108577+00:00
+Q074,How do reference-free evals apply to online monitoring and the RAG triad?,0.0,0,4,ctx_relevancey_v1,2026-10-04T06:29:25.607222+00:00
+Q084,What's the difference between reference-based and reference-free evaluation?,0.833,5,6,ctx_relevancey_v1,2026-10-04T06:29:43.833184+00:00
+q010,how are safety issues like toxicity evaluated differently from quality issues?,0.667,4,6,ctx_relevancey_v1,2026-10-04T06:30:01.645034+00:00
+q019,what is humanity's last exam (hle) and why did the researchers give it that name?,0.8,8,10,ctx_relevancey_v1,2026-10-04T06:30:19.808508+00:00
+Q034,What is an eval harness and why use one?,1.0,7,7,ctx_relevancey_v1,2026-10-04T06:30:38.221044+00:00
