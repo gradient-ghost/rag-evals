@@ -1,6 +1,8 @@
 # rag-evals
 
-Component-level evaluation of a RAG system built for an LLM Evals course. Evaluates both the **Retriever** and **Generator** independently using crash-safe pipelines and LLM-as-a-judge.
+Component-level evaluation of a RAG system built while following the **CampusX (by Nitish Singh) YouTube Course on RAG / LLM Evaluations**. Evaluates both the **Retriever** and **Generator** independently as well as end-to-end **Contextual Relevancy** (RAG Triad) using crash-safe pipelines and LLM-as-a-judge.
+
+The evaluation benchmarks and knowledge base are constructed directly from raw spoken transcripts across the **8 live lecture sessions** of the CampusX course located in [`data/raw/`](data/raw/).
 
 ---
 
@@ -97,7 +99,7 @@ Evaluates the LLM generation component on answer quality and hallucination preve
 | **Avg Relevancy** | **0.851** | **0.993** | 17/18 answered queries scored a perfect 1.0 |
 | **Abstentions / Refusals** | **3 (14.3%)** | — | Triggered negative constraint due to context gaps |
 
-*Raw data: [`data/contexts/generated_answers.jsonl`](data/contexts/generated_answers.jsonl), [`results/generator_evals.csv`](results/generator_evals.csv).*
+*Raw data: [`data/contexts/generated_answers.jsonl`](data/contexts/generated_answers.jsonl), [`results/generator_evals.csv`](results/generator_evals.csv).*  
 *Detailed report: [`docs/generator_baseline_eval.md`](docs/generator_baseline_eval.md).*
 
 ### Key Findings
@@ -107,15 +109,71 @@ Evaluates the LLM generation component on answer quality and hallucination preve
 
 ---
 
-## Quickstart
+## 3. Contextual Relevancy Evaluation (RAG Triad)
+
+Evaluates the signal-to-noise ratio of the retrieved context relative to the input query ($\frac{\text{Relevant Claims}}{\text{Total Claims}}$) in a reference-free setting across the top-5 retrieved chunks.
+
+* **Stack:** Gemini 3.8 Flash decomposing retrieved chunks into atomic statements + Gemini 3.5 Flash Lite binary classification (`is_relevant: bool`).
+* **Architecture:** Evaluated on the two-stage hybrid retriever (ChromaDB + BGE-M3 @ $k=16 \rightarrow$ Cross-Encoder Reranker `BAAI/bge-reranker-v2-m3` @ top-5).
+* **Metrics (Pure Python Scoring):**
+  * **Macro Mean Relevancy:** **79.0% (0.7897)** query-level relevancy across 20 evaluation queries.
+  * **Micro Aggregate Relevancy:** **80.5% (99 / 123)** of extracted claims were strictly relevant to the prompt.
+  * **High Relevancy ($\ge 0.80$):** **65.0% (13 / 20)** of queries retrieved dense, high-signal context.
+  * **Perfect Retrieval Rate (1.0):** **30.0% (6 / 20)** had zero irrelevant claims.
+
+*Raw data: [`data/contexts/ctx_relevancy.jsonl`](data/contexts/ctx_relevancy.jsonl), [`results/ctx_relevancy_eval.csv`](results/ctx_relevancy_eval.csv).*  
+*Detailed report: [`docs/contextual_relevancy_eval.md`](docs/contextual_relevancy_eval.md).*
+
+---
+
+## Setup & Quickstart
+
+### 1. Installation
+Clone the repository and install dependencies using `uv` (recommended) or `pip`:
 
 ```bash
-# 1. Run retriever evaluation
+# Clone the repository
+git clone https://github.com/Saksham-3175/rag-evals.git
+cd rag-evals
+
+# Using uv (recommended)
+uv sync
+
+# Or using standard pip
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 2. Environment Variables
+Copy the example environment configuration and supply your Google Gemini API key:
+
+```bash
+cp .env.example .env
+```
+Inside `.env`:
+```ini
+GEMINI_API_KEY="your-gemini-api-key"
+```
+
+### 3. Running Evaluations
+
+```bash
+# 1. Run multi-stage isolated retriever evaluation (dense + reranker)
 python evals/retriever_eval.py
 
-# 2. Run generator answer generation
+# 2. Generate grounded answers using the generator pipeline
 python evals/generate_answers.py
 
-# 3. Run generator evaluation judge
+# 3. Evaluate generator output (faithfulness & relevancy claims decomposition)
 python evals/generator_eval.py
+
+# 4. Run reference-free contextual relevancy evaluation (RAG Triad)
+python evals/contextual_relevancy_eval.py
 ```
+
+---
+
+## 🙏 Acknowledgments
+
+* Special thanks to **Nitish Singh** and the **[CampusX](https://www.youtube.com/@campusx-official)** team for their comprehensive YouTube course on RAG and LLM Evaluations, which inspired the pipelines, architecture decisions, and experimental methodology in this repository.
